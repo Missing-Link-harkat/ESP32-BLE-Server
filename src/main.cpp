@@ -48,10 +48,9 @@ void CharacteristicCallbacks::onWrite(NimBLECharacteristic* pCharacteristic, Nim
   String key = doc["key"];
 
   if (key.equals("a")) {
-    digitalWrite(RED_LED_PIN, 255);
-    digitalWrite(GREEN_LED_PIN, 0);
-    digitalWrite(BLUE_LED_PIN, 0);
-
+    ledNotification(255, 0, 0);
+  } else if (key.equals("b")) {
+    ledNotification(0, 0, 255);
   }
 }
 
@@ -199,9 +198,7 @@ void ledNotification(int red, int green, int blue) {
   digitalWrite(GREEN_LED_PIN, green);
   digitalWrite(BLUE_LED_PIN, blue);
   delay(500);
-  if (programState) {
-    switchLed();
-  }
+  switchLed();
 }
 
 void buttonLoop() {
