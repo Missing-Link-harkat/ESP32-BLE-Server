@@ -1,78 +1,59 @@
-#include "Arduino.h"
-#include "Preferences.h"
-// #include "ArduinoJson.h"
-#include "NimBLEDevice.h"
-#include "TFT_eSPI.h"
-#include "SPI.h"
-#include "BleGamepad.h"
-#include "Bounce2.h"
-
-#define SERVICE_UUID "4fafc201-1fb5-459e-8fcc-c5c9c331914b"
-#define CHARACTERISTIC_UUID "beb5483e-36e1-4688-b7f5-ea07361b26a8"
-
-#define BUTTON_PIN          13
-#define RED_LED_PIN         27
-#define GREEN_LED_PIN       26
-#define BLUE_LED_PIN        25
-
-#define OUTPUT_REPORT_LENGTH 5
+#include "main.h"
 
 BleGamepad bleGamepad("ESP32 Gamepad", "ESP32", 100);
 BleGamepadConfiguration bleGamepadConfiguration;
 Bounce debounce = Bounce();
 
 static NimBLEServer* pServer;
+ServerCallbacks serverCallbacks;
+CharacteristicCallbacks chrCallbacks;
+
 Preferences preferences;
 
 TFT_eSPI tft = TFT_eSPI();
 
 bool programState; // true - gamepad, false - BLE server
 
-void drawConnection(String message) {
+void ServerCallbacks::onConnect(NimBLEServer* pServer, NimBLEConnInfo& connInfo) {
+  Serial.printf("Client address: %s\n", connInfo.getAddress().toString().c_str());
+  drawConnection(connInfo.getAddress().toString().c_str());
+}
+
+void ServerCallbacks::onDisconnect(NimBLEServer* pServer, NimBLEConnInfo& connInfo, int reason) {
+  Serial.printf("Client disconnected, start advertising\n");
   tft.fillRect(0, 0, tft.width(), 48, TFT_BLACK);
-  tft.setCursor(0, 0);
-  tft.setTextColor(TFT_WHITE, TFT_BLACK);
-  tft.setTextSize(1);
-  tft.print("Client connected:\n");
-  tft.print(message);
+  NimBLEDevice::startAdvertising();
 }
 
-void drawReceived(String received) {
-  tft.fillRect(0, tft.height() - 32, tft.width(), 32, TFT_BLACK);
-  tft.setCursor(0, tft.height() - 32);
-  tft.setTextColor(TFT_WHITE, TFT_BLACK);
-  tft.setTextSize(1);
-  tft.print("Last received:\n");
-  tft.print(received);
+void CharacteristicCallbacks::onRead(NimBLECharacteristic* pCharacteristic, NimBLEConnInfo& connInfo) {
+  Serial.printf("%s : onRead(), value: %s\n",
+    pCharacteristic->getUUID().toString().c_str(),
+    pCharacteristic->getValue().c_str());
 }
 
-class ServerCallbacks : public NimBLEServerCallbacks {
-  void onConnect(NimBLEServer* pServer, NimBLEConnInfo& connInfo) override {
-    Serial.printf("Client address: %s\n", connInfo.getAddress().toString().c_str());
-    drawConnection(connInfo.getAddress().toString().c_str());
+void CharacteristicCallbacks::onWrite(NimBLECharacteristic* pCharacteristic, NimBLEConnInfo& connInfo) {
+  String newValue = pCharacteristic->getValue().c_str();
+  Serial.printf("%s : onWrite(), value: %s\n", pCharacteristic->getUUID().toString().c_str(), newValue);
+  drawReceived(newValue);
+  // TODO: Parse received data and control motors
+  JsonDocument doc;
+
+  DeserializationError error = deserializeJson(doc, newValue);
+  if (error) {
+    Serial.print(F("deserializeJson() failed: "));
+    Serial.println(error.c_str());
+    return;
   }
 
-  void onDisconnect(NimBLEServer* pServer, NimBLEConnInfo& connInfo, int reason) override {
-    Serial.printf("Client disconnected, start advertising\n");
-    tft.fillRect(0, 0, tft.width(), 48, TFT_BLACK);
-    NimBLEDevice::startAdvertising();
-  }
-} serverCallbacks;
+  String key = doc["key"];
 
-class CharacteristicCallbacks : public NimBLECharacteristicCallbacks {
-  void onRead(NimBLECharacteristic* pCharacteristic, NimBLEConnInfo& connInfo) override {
-    Serial.printf("%s : onRead(), value: %s\n",
-      pCharacteristic->getUUID().toString().c_str(),
-      pCharacteristic->getValue().c_str());
-  }
+  if (key.equals("a")) {
+    digitalWrite(RED_LED_PIN, 255);
+    digitalWrite(GREEN_LED_PIN, 0);
+    digitalWrite(BLUE_LED_PIN, 0);
 
-  void onWrite(NimBLECharacteristic* pCharacteristic, NimBLEConnInfo& connInfo) override {
-    String newValue = pCharacteristic->getValue().c_str();
-    Serial.printf("%s : onWrite(), value: %s\n", pCharacteristic->getUUID().toString().c_str(), newValue);
-    drawReceived(newValue);
-    // TODO: Parse received data and control motors
   }
-} chrCallbacks;
+}
 
 void savePreferences(bool state) {
   preferences.begin("stateVariable", false);
@@ -93,6 +74,24 @@ bool loadPreferences() {
   }
   preferences.end();
   return state;
+}
+
+void drawConnection(String message) {
+  tft.fillRect(0, 0, tft.width(), 48, TFT_BLACK);
+  tft.setCursor(0, 0);
+  tft.setTextColor(TFT_WHITE, TFT_BLACK);
+  tft.setTextSize(1);
+  tft.print("Client connected:\n");
+  tft.print(message);
+}
+
+void drawReceived(String received) {
+  tft.fillRect(0, tft.height() - 32, tft.width(), 32, TFT_BLACK);
+  tft.setCursor(0, tft.height() - 32);
+  tft.setTextColor(TFT_WHITE, TFT_BLACK);
+  tft.setTextSize(1);
+  tft.print("Last received:\n");
+  tft.print(received);
 }
 
 void drawStatus() {
@@ -192,6 +191,16 @@ void switchLed() {
     digitalWrite(RED_LED_PIN, 0);
     digitalWrite(GREEN_LED_PIN, 255);
     digitalWrite(BLUE_LED_PIN, 0);
+  }
+}
+
+void ledNotification(int red, int green, int blue) {
+  digitalWrite(RED_LED_PIN, red);
+  digitalWrite(GREEN_LED_PIN, green);
+  digitalWrite(BLUE_LED_PIN, blue);
+  delay(500);
+  if (programState) {
+    switchLed();
   }
 }
 
