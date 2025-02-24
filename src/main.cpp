@@ -13,6 +13,10 @@ Preferences preferences;
 TFT_eSPI tft = TFT_eSPI();
 
 bool programState; // true - gamepad, false - BLE server
+int leftMotorPin = 12;
+int rightMotorPin = 14;
+
+unsigned long testTimer = 0;
 
 void ServerCallbacks::onConnect(NimBLEServer* pServer, NimBLEConnInfo& connInfo) {
   Serial.printf("Client address: %s\n", connInfo.getAddress().toString().c_str());
@@ -54,25 +58,43 @@ void CharacteristicCallbacks::onWrite(NimBLECharacteristic* pCharacteristic, Nim
   }
 }
 
-void savePreferences(bool state) {
-  preferences.begin("stateVariable", false);
-  preferences.putBool("state", state);
+void savePreferences(const char* nameSpace) {
+  if (nameSpace == "stateVariable") {
+    preferences.begin("stateVariable", false);
+    preferences.putBool("state", programState);
+  } else if (nameSpace == "motorPins") {
+    preferences.begin("motorPins", false);
+    preferences.putInt("leftMotor", leftMotorPin);
+    preferences.putInt("rightMotor", rightMotorPin);
+  }
   preferences.end();
 }
 
-bool loadPreferences() {
-  bool state;
-  preferences.begin("stateVariable", true);
-  if (!preferences.isKey("state")) {
-    Serial.println("State not found, setting default state to false...");
-    savePreferences(false);
-    state = false;
-  } else {
-    Serial.println("State successfully found...");
-    state = preferences.getBool("state", false);
+void loadPreferences(const char* nameSpace) {
+  if (nameSpace == "stateVariable") {
+    preferences.begin("stateVariable", true);
+    if (!preferences.isKey("state")) {
+      Serial.println("State not found, setting default state to false...");
+      programState = false;
+      savePreferences("stateVariable");
+    } else {
+      Serial.println("State successfully found...");
+      programState = preferences.getBool("state", false);
+    }
+  } else if (nameSpace == "motorPins") {
+    preferences.begin("motorPins", true);
+    if (!preferences.isKey("leftMotor") || !preferences.isKey("rightMotor")) {
+      Serial.println("Motor pins not found, setting default pins...");
+      leftMotorPin = 12;
+      rightMotorPin = 14;
+      savePreferences("motorPins");
+    } else {
+      Serial.println("Motor pins successfully found...");
+      leftMotorPin = preferences.getInt("leftMotor", 12);
+      rightMotorPin = preferences.getInt("rightMotor", 14);
+    }
   }
   preferences.end();
-  return state;
 }
 
 void drawConnection(String message) {
@@ -179,18 +201,10 @@ void initBLEDevice() {
   Serial.println("Advertising started");
 }
 
-void switchLed() {
-  if (programState) {
-    Serial.println("Led yellow");
-    digitalWrite(RED_LED_PIN, 255);
-    digitalWrite(GREEN_LED_PIN, 255);
-    digitalWrite(BLUE_LED_PIN, 0);
-  } else {
-    Serial.println("Led green");
-    digitalWrite(RED_LED_PIN, 0);
-    digitalWrite(GREEN_LED_PIN, 255);
-    digitalWrite(BLUE_LED_PIN, 0);
-  }
+void switchLed(int red, int green, int blue) {
+  digitalWrite(RED_LED_PIN, red);
+  digitalWrite(GREEN_LED_PIN, green);
+  digitalWrite(BLUE_LED_PIN, blue);
 }
 
 void ledNotification(int red, int green, int blue) {
@@ -198,16 +212,46 @@ void ledNotification(int red, int green, int blue) {
   digitalWrite(GREEN_LED_PIN, green);
   digitalWrite(BLUE_LED_PIN, blue);
   delay(500);
-  switchLed();
+  switchLed(programState ? 255 : 0, 255, 0);
 }
 
 void buttonLoop() {
   debounce.update();
   int debounceState = debounce.read();
-  if (debounceState == LOW && debounce.currentDuration() > 3000) {
-    programState = !programState;
-    savePreferences(programState);
-    ESP.restart();
+
+  static unsigned long pressStartTime = 0;
+
+  if (debounceState == LOW) {
+    if (pressStartTime == 0) {
+      pressStartTime = millis();
+    }
+
+    unsigned long pressDuration = millis() - pressStartTime;
+
+    if (pressDuration > 2500 && pressDuration <= 5000) {
+      switchLed(255, 0, 255);
+    } else if (pressDuration > 5000) {
+      switchLed(0, 255, 255);
+    }
+  } else {
+    if (pressStartTime != 0) {
+      unsigned long pressDuration = millis() - pressStartTime;
+      
+      if (pressDuration > 2500 && pressDuration <= 5000) {
+        Serial.println("Changing motor assignments...");
+        int tempPin = leftMotorPin;
+        leftMotorPin = rightMotorPin;
+        rightMotorPin = tempPin;
+        savePreferences("motorPins");
+      } else if (pressDuration > 5000) {
+        programState = !programState;
+        savePreferences("stateVariable");
+        ESP.restart();
+      }
+
+      pressStartTime = 0;
+      switchLed(programState ? 255 : 0, 255, 0);
+    }
   }
 }
 
@@ -225,8 +269,9 @@ void setup() {
   debounce.attach(BUTTON_PIN);
   debounce.interval(5);
 
-  programState = loadPreferences();
-  switchLed();
+  loadPreferences("stateVariable");
+  loadPreferences("motorPins");
+  switchLed(programState ? 255 : 0, 255, 0);
   drawStatus();
 
   if (programState) {
@@ -262,4 +307,9 @@ void loop() {
     }
   }
   buttonLoop();
+
+  if (millis() - testTimer > 5000) {
+    testTimer = millis();
+    Serial.printf("Left motor pin: %d, Right motor pin: %d\n", leftMotorPin, rightMotorPin);
+  }
 }

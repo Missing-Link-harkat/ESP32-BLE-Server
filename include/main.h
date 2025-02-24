@@ -22,13 +22,13 @@
 
 void drawConnection(String message);
 void drawReceived(String received);
-void savePreferences(bool state);
-bool loadPreferences();
+void savePreferences(const char* nameSpace);
+void loadPreferences(const char* nameSpace);
 void drawStatus();
 void initGamepadMode();
 void receiveHIDReport();
 void initBLEDevice();
-void switchLed();
+void switchLed(int red, int green, int blue);
 void ledNotification(int red, int green, int blue);
 void buttonLoop();
 
