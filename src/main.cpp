@@ -7,6 +7,7 @@ Bounce debounce = Bounce();
 static NimBLEServer* pServer;
 ServerCallbacks serverCallbacks;
 CharacteristicCallbacks chrCallbacks;
+NameWriteCallback nameWriteCallback;
 
 Preferences preferences;
 
@@ -19,8 +20,7 @@ int rightMotorPin = 14;
 unsigned long testTimer = 0;
 
 void ServerCallbacks::onConnect(NimBLEServer* pServer, NimBLEConnInfo& connInfo) {
-  Serial.printf("Client address: %s\n", connInfo.getAddress().toString().c_str());
-  drawConnection(connInfo.getAddress().toString().c_str());
+  // NimBLEDevice::stopAdvertising();
 }
 
 void ServerCallbacks::onDisconnect(NimBLEServer* pServer, NimBLEConnInfo& connInfo, int reason) {
@@ -56,6 +56,12 @@ void CharacteristicCallbacks::onWrite(NimBLECharacteristic* pCharacteristic, Nim
   } else if (key.equals("b")) {
     ledNotification(0, 0, 255);
   }
+}
+
+void NameWriteCallback::onWrite(NimBLECharacteristic* pCharacteristic, NimBLEConnInfo& connInfo) {
+  Serial.printf("Characteristic %s written\n", pCharacteristic->getUUID().toString().c_str());
+  String newValue = pCharacteristic->getValue().c_str();
+  drawConnection(newValue);
 }
 
 void savePreferences(const char* nameSpace) {
@@ -189,6 +195,12 @@ void initBLEDevice() {
 
   NimBLE2904* pDesc2904 = pCharacteristic->create2904();
   pDesc2904->setFormat(NimBLE2904::FORMAT_UTF8);
+
+  NimBLECharacteristic* pNameCharacteristic = pService->createCharacteristic(
+    NAME_CHARACTERISTIC_UUID,
+    NIMBLE_PROPERTY::WRITE
+  );
+  pNameCharacteristic->setCallbacks(&nameWriteCallback);
 
   pService->start();
 

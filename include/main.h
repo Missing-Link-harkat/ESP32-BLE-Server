@@ -12,6 +12,7 @@
 
 #define SERVICE_UUID "4fafc201-1fb5-459e-8fcc-c5c9c331914b"
 #define CHARACTERISTIC_UUID "beb5483e-36e1-4688-b7f5-ea07361b26a8"
+#define NAME_CHARACTERISTIC_UUID "73c05096-b481-41aa-b8e9-b86bf434d298"
 
 #define BUTTON_PIN          13
 #define RED_LED_PIN         27
@@ -39,6 +40,10 @@ class ServerCallbacks : public NimBLEServerCallbacks {
   
 class CharacteristicCallbacks : public NimBLECharacteristicCallbacks {
   void onRead(NimBLECharacteristic* pCharacteristic, NimBLEConnInfo& connInfo) override;
+  void onWrite(NimBLECharacteristic* pCharacteristic, NimBLEConnInfo& connInfo) override;
+};
+
+class NameWriteCallback : public NimBLECharacteristicCallbacks {
   void onWrite(NimBLECharacteristic* pCharacteristic, NimBLEConnInfo& connInfo) override;
 };
   
